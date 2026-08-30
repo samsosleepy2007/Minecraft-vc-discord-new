@@ -996,6 +996,114 @@ async def set_range(i: discord.Interaction, distance: int):
     else:
         await i.response.send_message("โปรดพิมพ์คำสั่ง /setup ก่อนใช้งานคำสั่งนี้", ephemeral=True)
 
+@bot.tree.command(name="creatvc", description="สร้างห้อง Voice Channel ชื่อ SamVc ในหมวดหมู่ที่เลือก")
+@app_commands.describe(category="หมวดหมู่ที่จะสร้างห้อง", amount="จำนวนห้องที่ต้องการสร้าง")
+async def create_vc(i: discord.Interaction, category: discord.CategoryChannel, amount: app_commands.Range[int, 1, 50]):
+    if not is_owner_or_admin(i):
+        return await i.response.send_message("คำสั่งนี้สำหรับผู้ดูแลระบบเท่านั้น", ephemeral=True)
+
+    await i.response.defer(ephemeral=True)
+
+    # Discord จำกัดจำนวน channel ต่อ category จึงสร้างได้เท่าที่พื้นที่ยังเหลือ
+    available_slots = max(0, 50 - len(category.channels))
+    if available_slots <= 0:
+        return await i.followup.send(
+            f"หมวดหมู่ **{category.name}** มีช่องเต็มแล้ว ไม่สามารถสร้าง Voice Channel เพิ่มได้",
+            ephemeral=True
+        )
+
+    create_count = min(amount, available_slots)
+
+    # ต่อเลขจาก SamVc หมายเลขสูงสุดที่มีอยู่ในหมวดหมู่นี้
+    existing_numbers = []
+    for ch in category.voice_channels:
+        name = ch.name.strip()
+        if name.startswith("SamVc") and name[5:].isdigit():
+            existing_numbers.append(int(name[5:]))
+
+    next_number = max(existing_numbers, default=0) + 1
+    created = []
+
+    try:
+        for offset in range(create_count):
+            channel_name = f"SamVc{next_number + offset}"
+            channel = await category.create_voice_channel(name=channel_name)
+            created.append(channel.name)
+    except discord.Forbidden:
+        return await i.followup.send(
+            f"สร้างได้ {len(created)} ห้อง ก่อนเกิดข้อผิดพลาด: บอทไม่มีสิทธิ์ **Manage Channels**",
+            ephemeral=True
+        )
+    except discord.HTTPException as e:
+        return await i.followup.send(
+            f"สร้างได้ {len(created)} ห้อง ก่อน Discord ตอบกลับข้อผิดพลาด: {e}",
+            ephemeral=True
+        )
+
+    extra = ""
+    if create_count < amount:
+        extra = f"\n⚠️ ขอสร้าง {amount} ห้อง แต่หมวดหมู่เหลือพื้นที่เพียง {available_slots} ห้อง"
+
+    await i.followup.send(
+        f"สร้าง Voice Channel ใน **{category.name}** สำเร็จ **{len(created)}** ห้อง\n"
+        f"ตั้งแต่ **{created[0]}** ถึง **{created[-1]}**{extra}",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="delvc", description="ลบห้อง SamVc จากล่างขึ้นบนในหมวดหมู่ที่เลือก")
+@app_commands.describe(category="หมวดหมู่ที่จะลบห้อง", amount="จำนวนห้องที่ต้องการลบ")
+async def delete_vc(i: discord.Interaction, category: discord.CategoryChannel, amount: app_commands.Range[int, 1, 50]):
+    if not is_owner_or_admin(i):
+        return await i.response.send_message("คำสั่งนี้สำหรับผู้ดูแลระบบเท่านั้น", ephemeral=True)
+
+    await i.response.defer(ephemeral=True)
+
+    # เลือกเฉพาะ SamVc + ตัวเลข และเรียงตามตำแหน่งจริงใน Discord จากล่างขึ้นบน
+    sam_channels = []
+    for ch in category.voice_channels:
+        name = ch.name.strip()
+        if name.startswith("SamVc") and name[5:].isdigit():
+            sam_channels.append(ch)
+
+    sam_channels.sort(key=lambda ch: (ch.position, ch.id), reverse=True)
+
+    if not sam_channels:
+        return await i.followup.send(
+            f"ไม่พบ Voice Channel รูปแบบ **SamVc1, SamVc2, ...** ในหมวดหมู่ **{category.name}**",
+            ephemeral=True
+        )
+
+    targets = sam_channels[:amount]
+    deleted = []
+
+    try:
+        for channel in targets:
+            channel_name = channel.name
+            await channel.delete(reason=f"/delvc โดย {i.user} ({i.user.id})")
+            deleted.append(channel_name)
+    except discord.Forbidden:
+        return await i.followup.send(
+            f"ลบได้ {len(deleted)} ห้อง ก่อนเกิดข้อผิดพลาด: บอทไม่มีสิทธิ์ **Manage Channels**",
+            ephemeral=True
+        )
+    except discord.HTTPException as e:
+        return await i.followup.send(
+            f"ลบได้ {len(deleted)} ห้อง ก่อน Discord ตอบกลับข้อผิดพลาด: {e}",
+            ephemeral=True
+        )
+
+    extra = ""
+    if len(targets) < amount:
+        extra = f"\n⚠️ ขอให้ลบ {amount} ห้อง แต่พบ SamVc เพียง {len(targets)} ห้อง"
+
+    await i.followup.send(
+        f"ลบ Voice Channel จากล่างขึ้นบนใน **{category.name}** สำเร็จ **{len(deleted)}** ห้อง\n"
+        f"ห้องที่ลบ: **{', '.join(deleted)}**{extra}",
+        ephemeral=True
+    )
+
+
 @bot.tree.command(name="zone")
 async def zone_create(i: discord.Interaction, name: str, category: discord.CategoryChannel, range_val: int = None):
     if not is_owner_or_admin(i):

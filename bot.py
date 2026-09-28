@@ -1625,16 +1625,7 @@ async def process_voice_logic():
         await assign_groups_in_category(guild, unzoned_online, cat, start, taken_rooms, curr, active_range=None)
 
 if __name__ == "__main__":
+    if not TOKEN:
+        raise RuntimeError("DISCORD_TOKEN environment variable is missing")
 
-    if not TOKEN: sys.exit(1)
-    time.sleep(random.randint(5, 10))
-    while True:
-        try:
-            bot.is_rate_limited = False
-            bot.run(TOKEN)
-        except discord.errors.HTTPException as e:
-            if e.status == 429:
-                bot.is_rate_limited = True
-                time.sleep(60)
-            else: time.sleep(10)
-        except: time.sleep(30)
+    bot.run(TOKEN)
